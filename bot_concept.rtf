@@ -1,0 +1,330 @@
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1033{\fonttbl{\f0\fnil\fcharset0 Calibri;}{\f1\fnil Calibri;}}
+{\*\generator Riched20 10.0.19041}\viewkind4\uc1 
+\pard\sa200\sl276\slmult1\f0\fs22\lang9 # Project Handover: Solana Automated Trading Bot \f1\emdash  Existing Codebase\par
+\par
+Act as a senior Node.js, Solana blockchain, and automated trading engineer. I already have an existing trading bot backend. Your job is to understand the current codebase, identify what is complete and incomplete, and help me finish it safely for a live client demonstration.\par
+\par
+**Important:** Do not rebuild the project from scratch. Inspect the existing code first, preserve working functionality, and make changes incrementally.\par
+\par
+## 1. Project Goal\par
+\par
+I want an automated Solana token trading bot that can:\par
+\par
+- Monitor market data and generate BUY/SELL signals using a strategy.\par
+- Apply risk management before executing trades.\par
+- Automatically buy tokens when buy conditions are satisfied.\par
+- Automatically sell tokens when sell conditions are satisfied.\par
+- Execute real on-chain transactions through the platform/API selected by the client.\par
+- Verify actual transaction status, token amounts received, SOL spent/received, fees, and profit/loss.\par
+- Update trade history, positions, and portfolio records correctly.\par
+- Support a live demonstration to a client.\par
+\par
+The target trading platform needs to be confirmed with the project owner before finalizing platform-specific integration. Jupiter Swap API V2 has been investigated previously, but confirm whether Jupiter is the final target before assuming it.\par
+\par
+There is no frontend dashboard requirement at present. The priority is a working backend/API demonstration.\par
+\par
+## 2. Existing Project Environment\par
+\par
+Development environment previously shown:\par
+\par
+`/workspaces/bot/bot`\par
+\par
+Git branch shown: `main`\par
+\par
+This is likely a Linux/GitHub Codespaces environment. Verify the current working directory before running commands.\par
+\par
+Existing files and services include:\par
+\par
+- `services/buyExecutionService.js`\par
+- `services/sellExecutionService.js`\par
+- `services/realTradeExecutionService.js`\par
+- `services/jupiterSwapService.js`\par
+- `services/walletService.js`\par
+- `services/strategyService.js`\par
+- `services/riskManagementService.js`\par
+- `services/tradeExecutionService.js`\par
+- `services/positionManagementService.js`\par
+- `services/portfolioManagementService.js`\par
+- `services/marketDataService.js`\par
+- Trade, portfolio, and position models\par
+- `testWallet.js`\par
+- `testJupiter.js`\par
+- `.env`\par
+\par
+This list is based on earlier inspection, not a guarantee that every file remains unchanged. Inspect the actual repository and identify the entry point, API routes, dependencies, database setup, and existing tests.\par
+\par
+## 3. Work Already Implemented\par
+\par
+### A. Wallet service and Devnet connectivity\par
+\par
+`services/walletService.js` already handles wallet initialization and connection, including:\par
+\par
+- RPC configuration\par
+- Private-key validation\par
+- Solana network selection\par
+- Wallet address and balance\par
+- Connection verification through Solana RPC\par
+\par
+The following test was run successfully:\par
+\par
+`node ./testWallet.js`\par
+\par
+Observed output:\par
+\par
+- Connection: true\par
+- Network: devnet\par
+- Balance: 0.999995 SOL\par
+- Wallet check passed\par
+\par
+This proves that the wallet connected to Devnet at that time. It does NOT prove Mainnet connectivity or successful live trading.\par
+\par
+Never print or expose the wallet's private key, `.env` secrets, or API keys.\par
+\par
+### B. Environment/network checks\par
+\par
+The following configuration check was executed without exposing secrets:\par
+\par
+`node --input-type=module -e 'import "dotenv/config"; const rpc=process.env.SOLANA_RPC_URL||""; const net=process.env.SOLANA_NETWORK||"devnet"; const trading=process.env.TRADING_NETWORK||"(not set)"; console.log(\{SOLANA_NETWORK:net,TRADING_NETWORK:trading,RPC_URL_CONFIGURED:!!rpc,RPC_LOOKS_DEVNET:rpc.includes("devnet"),NETWORK_SETTINGS_MATCH:net===trading\});'`\par
+\par
+Observed values:\par
+\par
+- `SOLANA_NETWORK=devnet`\par
+- `TRADING_NETWORK=devnet`\par
+- RPC configured\par
+- RPC URL appears to be Devnet\par
+- Network settings match\par
+\par
+These checks only inspect configuration strings; they are not independent proof of the connected cluster.\par
+\par
+### C. PAPER trade execution\par
+\par
+The owner reports that PAPER BUY/SELL functionality has been tested. Preserve it.\par
+\par
+In `services/buyExecutionService.js`:\par
+\par
+- PAPER mode uses `executePaperTrade` from `services/tradeExecutionService.js`.\par
+- REAL mode uses `executeRealTrade` from `services/realTradeExecutionService.js`.\par
+- Position and portfolio update services are called after trade execution.\par
+\par
+Do not break or silently change existing PAPER behavior.\par
+\par
+### D. Risk and strategy services\par
+\par
+Existing services include:\par
+\par
+- `strategyService.js`\par
+- `riskManagementService.js`\par
+- `marketDataService.js`\par
+\par
+Inspect their implementation and tests to determine exactly which rules are functional. Do not assume that a listed service is complete merely because the file exists.\par
+\par
+## 4. Existing REAL trading implementation and limitations\par
+\par
+### REAL BUY\par
+\par
+`services/realTradeExecutionService.js` exists.\par
+\par
+The inspected code includes these checks:\par
+\par
+- `TRADING_NETWORK` must equal `"mainnet"`.\par
+- `getSolanaNetwork()` must return `"mainnet-beta"`.\par
+- `JUPITER_API_KEY` must be configured.\par
+\par
+The service appears to create a PENDING trade, call `executeJupiterSwap`, and process the result.\par
+\par
+However, successful Mainnet execution has NOT been verified. Do not label REAL BUY as production-ready until a successful transaction and actual wallet changes are confirmed.\par
+\par
+### REAL SELL\par
+\par
+`services/sellExecutionService.js` currently rejects non-PAPER mode with:\par
+\par
+`REAL trade execution is not implemented yet`\par
+\par
+The inspected REAL execution service also rejects sides other than BUY.\par
+\par
+Therefore, REAL SELL is incomplete and needs implementation and testing.\par
+\par
+### Important BUY quantity inconsistency\par
+\par
+In `services/buyExecutionService.js`, the REAL branch calls `executeRealTrade` with:\par
+\par
+- `side: "BUY"`\par
+- `solAmount: quantity`\par
+\par
+The PAPER branch uses `quantity` as token quantity, while the REAL branch treats it as SOL spend.\par
+\par
+Inspect all callers, request validation, strategy calculations, models, and API routes before changing this. Establish explicit units for SOL spend, token quantity, token decimals, and USD price. Avoid introducing regressions.\par
+\par
+## 5. Previous Jupiter API test\par
+\par
+Jupiter Swap API V2 was investigated using `testJupiter.js`.\par
+\par
+The test called:\par
+\par
+`https://api.jup.ag/swap/v2/order`\par
+\par
+It received HTTP 200 for a Mainnet SOL-to-USDC order/quote request, but the response reported:\par
+\par
+`Insufficient funds`\par
+\par
+No successful swap was completed, and the `/execute` step was not successfully demonstrated.\par
+\par
+Important distinction:\par
+\par
+- Receiving an HTTP 200 or a quote does not prove that a transaction was executed.\par
+- Devnet SOL cannot fund a Mainnet Jupiter swap.\par
+- Do not assume Jupiter provides the required swap liquidity on Devnet.\par
+- Confirm the selected platform and its current official API documentation before modifying integration code.\par
+\par
+If Jupiter is confirmed as the target, inspect `services/jupiterSwapService.js` first. The earlier next diagnostic command was:\par
+\par
+`sed -n '1,240p' services/jupiterSwapService.js`\par
+\par
+Review how order creation, transaction signing, execution, API authentication, and response parsing are implemented. Do not assume the service is complete until verified.\par
+\par
+## 6. Required work to finish the bot\par
+\par
+Work through these steps in order.\par
+\par
+### Step 1: Audit the existing codebase\par
+\par
+- Identify the server entry point and API routes.\par
+- Inspect package scripts, dependencies, models, and database configuration.\par
+- Trace the complete PAPER BUY and SELL flows.\par
+- Trace the current REAL BUY flow.\par
+- Identify existing tests and missing test coverage.\par
+- Report findings before making major changes.\par
+\par
+### Step 2: Preserve and test PAPER mode\par
+\par
+- Add or run regression tests for PAPER BUY/SELL.\par
+- Verify trade history, position updates, portfolio updates, and risk validation.\par
+- Confirm that PAPER mode does not submit blockchain transactions.\par
+- Keep existing behavior compatible unless a change is necessary and explained.\par
+\par
+### Step 3: Confirm the target platform\par
+\par
+Ask the owner to confirm the target trading platform before implementing platform-specific integration.\par
+\par
+Use that platform's current official documentation. Do not invent API endpoints or claim unsupported network compatibility.\par
+\par
+### Step 4: Complete REAL BUY\par
+\par
+Once the platform is confirmed:\par
+\par
+- Validate network, wallet, token mint, spend amount, and available balance.\par
+- Validate risk limits and slippage before execution.\par
+- Create and execute the correct transaction using the supported platform API.\par
+- Handle transaction signing securely.\par
+- Confirm the transaction through the platform response and/or Solana RPC.\par
+- Verify actual SOL spent, actual token amount received, transaction signature, and fees.\par
+- Persist the actual execution details rather than estimated quote amounts.\par
+\par
+### Step 5: Implement REAL SELL\par
+\par
+- Sell the actual available token amount, accounting for token decimals.\par
+- Validate balances and the requested sell amount.\par
+- Apply slippage and risk checks.\par
+- Execute and confirm the real swap.\par
+- Verify the actual SOL received and fees.\par
+- Calculate realized profit/loss using actual execution data and a consistent cost basis.\par
+- Update positions and portfolio only after the execution state is understood.\par
+\par
+### Step 6: Handle failures safely\par
+\par
+Implement safe handling for:\par
+\par
+- Failed transactions\par
+- Insufficient funds\par
+- Invalid token mints\par
+- API rate limits and errors\par
+- Slippage exceeded\par
+- RPC timeouts\par
+- Duplicate execution attempts\par
+- Database failures after a successful on-chain swap\par
+- Unknown transaction status\par
+\par
+A timeout does not necessarily mean the transaction failed. Reconcile the transaction signature, request ID, and on-chain status before retrying. Never blindly retry an uncertain trade.\par
+\par
+Use explicit states such as PENDING, CONFIRMED, FAILED, and RECONCILIATION_REQUIRED where appropriate. Do not mark a trade failed merely because the database update or confirmation request timed out if the blockchain transaction may already have succeeded.\par
+\par
+### Step 7: Risk controls and emergency stop\par
+\par
+Before any live execution, review:\par
+\par
+- Maximum SOL spend per trade\par
+- Maximum total exposure\par
+- Maximum daily loss\par
+- Slippage limits\par
+- Token validation\par
+- Duplicate-order prevention\par
+- Cooldown and retry behavior\par
+- Emergency stop for new trades\par
+- Clear separation between PAPER and REAL modes\par
+\par
+Never switch to Mainnet automatically. Never fund a wallet or execute a live trade without explicit approval from the owner.\par
+\par
+### Step 8: Prepare the client demo\par
+\par
+The final backend demonstration should show:\par
+\par
+1. Backend and database running.\par
+2. Wallet/network connection status.\par
+3. Market signal and risk decision.\par
+4. Actual BUY execution.\par
+5. Confirmed transaction signature and wallet token balance.\par
+6. Actual SELL execution.\par
+7. Confirmed transaction signature and SOL received.\par
+8. Trade history, position closure, fees, and realized P&L.\par
+\par
+Clearly label PAPER and REAL transactions. Never present simulated trades as real transactions.\par
+\par
+## 7. Security requirements\par
+\par
+- Never ask the owner to paste private keys, seed phrases, `.env` contents, or API keys into the conversation.\par
+- Do not commit secrets to GitHub.\par
+- Use environment variables and secure secret storage.\par
+- Never expose sensitive values in logs or test output.\par
+- Do not run a Mainnet swap just to see whether the code works.\par
+- Do not enable live trading by changing environment variables alone.\par
+- Do not weaken network checks or risk validation to bypass errors.\par
+\par
+## 8. How to collaborate with the owner\par
+\par
+The owner prefers simple Hinglish explanations and step-by-step work.\par
+\par
+For each step:\par
+\par
+1. Explain what the current code does.\par
+2. Identify the exact problem with file and line references.\par
+3. Propose the smallest safe change.\par
+4. Show the exact terminal command or code edit needed.\par
+5. Run appropriate tests and interpret their results.\par
+6. Wait for the owner to share output when direct execution is unavailable.\par
+7. Keep track of verified work versus pending work.\par
+\par
+Do not repeatedly ask for files that have already been supplied. Do not rewrite the project from scratch. Inspect before editing and explain any potentially breaking change.\par
+\par
+## 9. Current verified status summary\par
+\par
+| Area | Status |\par
+|---|---|\par
+| Existing Node.js backend | Present; full audit pending |\par
+| Wallet connectivity | Devnet test passed |\par
+| PAPER BUY/SELL | Owner reports tested; regression verification needed |\par
+| Strategy and risk services | Files exist; inspect exact behavior |\par
+| Jupiter order/quote request | HTTP 200 observed; insufficient-funds response |\par
+| Successful Mainnet BUY | Not verified |\par
+| REAL SELL | Not implemented |\par
+| On-chain/database reconciliation | Needs review |\par
+| End-to-end REAL trading | Not ready to declare complete |\par
+\par
+## Your first task\par
+\par
+Do NOT start rewriting code yet.\par
+\par
+First inspect the current repository and `services/jupiterSwapService.js`. Explain its current behavior, identify what is already implemented, and list the smallest next steps. Confirm the target platform with the owner before making platform-specific changes.\par
+\par
+Keep PAPER mode intact and treat real-money trading as a separately approved, high-risk operation.\f0\par
+}
+ 
