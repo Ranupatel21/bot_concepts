@@ -814,4 +814,385 @@ First, give me a comparison table of the available strategy options, including:
 Then explain how different options can be combined, including potential conflicts between profit targets, stop-losses, and partial sells.
 
 Finally, ask me one focused question at a time so we can discuss the choices and gradually finalize a strategy. Do not jump directly to implementation or produce a large code change.
- 
+----------------------------------------------------------------***************************************--------------------------------------------------
+# Phase 6 — Solana Trading Bot Dashboard + Dynamic Strategy Settings
+//buy sell ka percentage chngeable or dashboard design ki straighgy
+
+## 1. Project Context
+
+I have an existing Solana automated trading bot built with Node.js. It listens to a Telegram channel for new token alerts, extracts token mint addresses, checks market data using DEX Screener, and uses a swap service such as Jupiter for swap execution.
+
+The existing project contains services for:
+- Buy and sell execution
+- Real trade execution
+- Jupiter swap integration
+- Wallet management
+- Strategy management
+- Risk management
+- Market data
+- Position management
+- Portfolio management
+
+The project also has a PAPER trading mode that must continue working.
+
+Before making changes, inspect the actual repository, understand the current architecture, and identify which features already exist. Reuse existing services wherever possible. Do not create duplicate services or replace working code unnecessarily.
+
+## 2. Main Objective
+
+Build a professional, responsive web dashboard for the existing trading bot.
+
+The dashboard must allow an authorized user to:
+- Monitor bot status and wallet information.
+- View open positions and trade history.
+- View trading performance and P&L.
+- Configure BUY amount, profit targets, partial SELL, and stop-loss.
+- Save and apply strategy settings without editing source code.
+- View transaction statuses and Telegram trade notifications.
+- Pause or resume automated trading safely.
+
+This is an existing bot integration task, not a request to create a new trading engine from scratch.
+
+## 3. UI/UX Design Requirements
+
+Create a premium, modern, dark trading dashboard inspired by professional crypto trading terminals.
+
+### Design direction
+- Dark charcoal/black background.
+- Subtle purple accents for active navigation and selected controls.
+- Clean typography, consistent spacing, rounded cards, and restrained borders.
+- Professional charts and readable data tables.
+- Avoid flashy gradients, excessive neon, clutter, and unnecessary animations.
+- Responsive layout for desktop, tablet, and mobile.
+- Clear loading, empty, error, success, and disconnected states.
+- Use a consistent design system for buttons, cards, inputs, badges, tables, and modals.
+
+### Sidebar navigation
+1. Dashboard
+2. Strategy Settings
+3. Open Positions
+4. Trade History
+5. Transactions
+6. Notifications
+7. General Settings
+
+### Dashboard home
+Include:
+- Bot status: Running / Paused / Error
+- Trading mode: PAPER / REAL
+- Wallet address and network
+- Available SOL balance
+- Open positions count
+- Total BUY and SELL transactions
+- Realized P&L
+- Unrealized P&L
+- Recent trades
+- Recent transaction failures
+- Recent bot activity
+
+Display live data from the existing backend. Do not fabricate wallet balances, P&L, transactions, or performance metrics. Clearly label unavailable data.
+
+### Strategy Settings page
+Create a well-organized configuration page with separate sections for:
+- BUY Configuration
+- Profit Targets
+- Partial SELL
+- Stop-Loss
+- Risk Controls
+- Configuration Version and History
+
+Use intuitive input fields, percentage sliders, radio controls, toggles, helper text, and validation messages. Every control must be connected to real application state and backend APIs.
+
+## 4. Strategy Settings — Initial Demo Defaults
+
+These values are placeholders for development and testing only. They are not a finalized trading strategy.
+
+Example:
+- BUY amount: 0.01 SOL
+- First profit target: +25%
+- Partial SELL: 25% of the original purchased token quantity
+- Stop-loss: −10%
+
+Show these as editable values, but make it clear that they are configurable examples. Do not hardcode them into trading execution logic.
+
+The interface must support editing values within backend-defined limits. The exact allowed ranges should be configurable and validated server-side.
+
+### Interactive controls
+Implement controls such as:
+- BUY amount: validated numeric input or selectable options.
+- First profit target: percentage slider and numeric input.
+- Partial SELL: percentage slider and numeric input.
+- Stop-loss: percentage slider and numeric input.
+
+If a slider and its numeric input represent the same setting, both must remain synchronized.
+
+Show a summary of the pending configuration before saving it.
+
+Do not assume that all future strategy rules are finalized. Keep the configuration model extensible.
+
+## 5. Backend Architecture
+
+Inspect the existing project before selecting filenames or changing the architecture.
+
+Potential components, if not already present:
+- `strategySettingsController.js`
+- `strategySettingsRoutes.js`
+- `strategySettingsService.js`
+- `strategyValidationService.js`
+- `StrategySettings.js` model
+
+Integrate with existing strategy and risk-management services rather than duplicating their functionality.
+
+### Proposed API endpoints
+
+- `GET /api/strategy-settings` — retrieve active settings.
+- `PUT /api/strategy-settings` — validate and save a configuration.
+- `GET /api/strategy-settings/history` — retrieve previous configuration versions.
+- `POST /api/strategy-settings/:version/activate` — activate a previously saved version, if supported by the final design.
+
+Adapt these endpoints to the existing API conventions and authentication middleware.
+
+### Data model
+
+The configuration should support fields such as:
+- BUY amount in SOL
+- Profit target definitions
+- Partial SELL rules
+- Stop-loss rules
+- Configuration version
+- Active/draft status
+- Created/updated timestamps
+- User who made the change
+- Optional audit history
+
+Use the database technology already used by the project.
+
+## 6. Validation and Security
+
+Backend validation is mandatory, even when the frontend also validates inputs.
+
+Requirements:
+- Reject missing, malformed, negative, non-finite, or out-of-range values.
+- Enforce configurable minimum and maximum BUY amounts.
+- Validate percentage ranges and sell quantities.
+- Prevent SELL quantities from exceeding the actual available position.
+- Prevent invalid or conflicting profit targets.
+- Validate the complete configuration before saving it.
+- Use atomic updates and optimistic concurrency/version checks where appropriate.
+- Require authentication and authorization for settings changes.
+- Protect endpoints against unauthorized requests and common API security issues.
+- Record who changed the configuration and when.
+- Never expose private keys, seed phrases, Telegram sessions, or secrets through the dashboard, API responses, logs, or database configuration records.
+- Never commit credentials or `.env` secrets to source control.
+
+If validation fails, return a clear error and preserve the previously active configuration.
+
+## 7. Save, Apply, and Versioning Behaviour
+
+Implement the following flow:
+
+1. The dashboard loads the active strategy configuration from the backend.
+2. The user edits the fields.
+3. The UI displays unsaved changes and validates the inputs.
+4. The user saves the proposed configuration.
+5. The backend authenticates the user, validates all fields, and stores a new configuration version.
+6. The dashboard displays whether the configuration is saved, active, pending, or rejected.
+7. The backend uses the appropriate configuration version when processing trades.
+
+Support a draft-versus-active configuration model if appropriate. Clearly explain whether saving a draft changes live behaviour or requires a separate Apply action.
+
+Never display a successful save or activation message until the backend confirms the operation.
+
+### Critical rule: Existing open positions
+
+The default behaviour must be:
+
+**New strategy settings apply only to new BUY trades opened after the new configuration becomes active. Existing open positions continue following the configuration version assigned to them when they were opened.**
+
+For each position, persist:
+- The strategy configuration version.
+- The relevant settings snapshot.
+- Entry price and actual acquired token quantity.
+- Position state and pending orders.
+- Profit targets already triggered or completed.
+- Stop-loss state and other relevant execution metadata.
+
+If the user wants to change rules for existing open positions, provide a separate, explicit action such as "Update Rules for Selected Positions".
+
+Before applying that action:
+- Show the affected positions.
+- Display the current and proposed rules.
+- Explain how the change affects pending orders and existing profit/stop-loss state.
+- Require explicit confirmation.
+- Apply changes safely without generating duplicate orders.
+
+Do not silently change the strategy of existing positions when a global configuration is updated.
+
+## 8. Trading Execution Integration
+
+The dashboard must not implement an independent trading engine.
+
+It must call the existing backend services and APIs. Strategy decisions and execution must remain server-side.
+
+On each new Telegram signal:
+1. Extract and validate the token mint.
+2. Apply the configured BUY amount and existing risk checks.
+3. Prevent duplicate processing.
+4. Execute the BUY through the existing execution service.
+5. Verify the transaction outcome.
+6. Record the actual token quantity, entry cost, fees where available, and strategy version.
+7. Start monitoring the position using the settings snapshot associated with that position.
+
+For automatic SELL:
+- Calculate the eligible sell quantity from the actual available token balance.
+- Respect completed partial sells and pending orders.
+- Ensure each target triggers according to its configured semantics.
+- Verify transaction outcomes before marking a position as sold.
+- Reconcile wallet balances and on-chain transactions with database state.
+
+Do not assume that a Jupiter quote or successful API response proves a swap was completed.
+
+If the existing REAL SELL path is incomplete, document the gap and implement it only after reviewing the existing transaction-signing and confirmation flow. Never falsely report successful live trading.
+
+## 9. Duplicate Protection and Transaction Reconciliation
+
+Implement or reuse persistent duplicate protection for:
+- Repeated Telegram alerts.
+- Repeated processing after a server restart.
+- Duplicate BUY requests.
+- Duplicate SELL requests.
+- Network timeouts with an unknown transaction outcome.
+
+Track transaction signatures and persistent order/position states.
+
+If a transaction outcome is unknown, check its on-chain status before submitting a replacement. Do not blindly retry a potentially successful BUY or SELL.
+
+Support meaningful statuses such as:
+- Pending
+- Submitted
+- Confirmed
+- Failed
+- Reconciliation Required
+
+Use the project's supported Solana transaction confirmation approach and handle errors safely.
+
+## 10. Open Positions Page
+
+Display:
+- Token mint and token identifier
+- Actual token quantity remaining
+- Entry price and current market price, when available
+- Unrealized P&L, when reliable data is available
+- Applied strategy version
+- Next profit target
+- Stop-loss level
+- Position status
+- Recent execution activity
+
+Provide a position detail view with transaction history and configuration snapshot.
+
+Never show estimated P&L as confirmed realized profit.
+
+## 11. Trade History and Transactions
+
+Trade History:
+- BUY/SELL side
+- Token mint
+- Executed quantity
+- Entry/exit information where available
+- Fees where available
+- Realized P&L where reliably calculated
+- Trigger reason
+- Strategy version
+- Trade status and timestamps
+
+Transactions:
+- Transaction signature
+- Network
+- Submission and confirmation status
+- Error details when appropriate
+- Link to the relevant Solana explorer for the correct network
+
+Use real data from the backend. Do not fabricate transaction signatures or performance values.
+
+## 12. Telegram Notifications
+
+Integrate with the existing notification infrastructure, if present.
+
+Support notifications for:
+- New signal detected
+- BUY successful or failed
+- Profit target reached
+- Partial SELL completed
+- Stop-loss triggered
+- Full exit completed
+- Transaction pending or failed
+- Reconciliation required
+- Strategy configuration successfully activated
+- Bot paused or resumed
+
+Avoid repeated notification spam. Use persistent event identifiers or deduplication where appropriate.
+
+## 13. Bot Controls and Risk Safety
+
+Provide:
+- Pause new BUY entries
+- Resume new BUY entries
+- Emergency stop for new entries and strategy execution
+- Clear display of pending transactions and open positions
+
+Define the emergency-stop behaviour carefully. Stopping new entries should not automatically abandon open positions. Explain whether existing position monitoring and protective SELL rules continue running.
+
+Require appropriate authorization for sensitive actions. Do not expose signing keys or let the frontend sign arbitrary transactions.
+
+## 14. PAPER and REAL Trading Modes
+
+Preserve the existing PAPER mode and its current functionality.
+
+Clearly display the selected trading mode and network.
+
+Do not automatically switch to REAL mode. Do not allow an accidental mode switch from the dashboard to enable live trading without explicit authorization and safeguards.
+
+If REAL BUY or SELL execution is incomplete or unverified, show a clear status and do not claim production readiness.
+
+Do not use Devnet funds as if they were Mainnet funds. Keep network-specific wallet configuration and transaction links separate.
+
+## 15. Testing Requirements
+
+Before marking the feature complete, test:
+
+- Loading settings from the backend.
+- Editing and saving valid values.
+- Rejecting invalid values.
+- Failed save leaves the active configuration unchanged.
+- Configuration versioning and audit history.
+- New positions use the newly active version.
+- Existing positions retain their previous version by default.
+- Explicit updates to existing positions require confirmation.
+- Repeated Telegram alerts do not create duplicate BUYs.
+- Repeated SELL triggers do not create duplicate sells.
+- Restart and timeout scenarios reconcile transactions safely.
+- PAPER mode continues to work.
+- Dashboard loading, error, empty, and mobile states work correctly.
+- Unauthorized users cannot change settings.
+- No secrets are exposed in frontend bundles or API responses.
+
+Do not claim a test passed unless it was actually executed.
+
+## 16. Implementation Workflow
+
+Work in this order:
+
+1. Inspect the repository and summarize the existing architecture.
+2. Identify reusable components, missing APIs, and incomplete execution paths.
+3. Propose the smallest safe implementation plan.
+4. Implement backend settings, validation, persistence, and versioning.
+5. Integrate validated settings with existing strategy services.
+6. Build the dark professional dashboard UI.
+7. Connect every relevant control to real backend state.
+8. Add position/history views and notifications.
+9. Test PAPER mode and configuration-update scenarios.
+10. Report changed files, completed work, tests run, and remaining limitations.
+
+Do not rewrite the entire project. Do not delete existing functionality. Do not hardcode strategy values in multiple places. Do not implement an unverified live trading flow merely to make the UI appear functional.
+
+The final result should be a professional, maintainable dashboard where strategy settings can be changed safely, with clear separation between saved settings, active settings, and the configuration version used by each open position.
