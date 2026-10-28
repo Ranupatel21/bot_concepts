@@ -327,4 +327,491 @@ First inspect the current repository and `services/jupiterSwapService.js`. Expla
 \par
 Keep PAPER mode intact and treat real-money trading as a separately approved, high-risk operation.\f0\par
 }
+
+////straightgy prompt 
+
+
+
+# Build My Existing Solana Telegram-to-Trade Bot
+
+Act as a senior Node.js backend engineer specializing in Solana, Telegram integrations, token market data, and automated trading.
+
+I have an existing Node.js trading bot. I want to adapt that existing codebase to the following real-world workflow. Do not create an entirely new project before inspecting the existing implementation.
+
+## Business requirement
+
+A Telegram channel publishes alerts when new tokens graduate from pump.fun and become available on DEX Screener.
+
+My bot should monitor that specific Telegram channel. When a new coin-arrival message appears, it should extract the token's Solana mint address from the message, validate the token, retrieve its market information from DEX Screener, and automatically buy the token if my configured conditions pass.
+
+After buying, the bot must continuously monitor the token and automatically sell according to configurable take-profit, stop-loss, trailing-stop, and partial-sell rules.
+
+The intended wallet is Phantom. The intended chain is Solana Mainnet. The target execution route/provider must be confirmed and integrated using its supported API. DEX Screener is primarily the market-data/discovery source; do not assume it executes swaps.
+
+## Existing project
+
+Previously inspected working directory:
+
+`/workspaces/bot/bot`
+
+Existing services include:
+
+- `services/buyExecutionService.js`
+- `services/sellExecutionService.js`
+- `services/realTradeExecutionService.js`
+- `services/jupiterSwapService.js`
+- `services/walletService.js`
+- `services/strategyService.js`
+- `services/riskManagementService.js`
+- `services/tradeExecutionService.js`
+- `services/positionManagementService.js`
+- `services/portfolioManagementService.js`
+- `services/marketDataService.js`
+
+Trade, position, and portfolio models also exist. `testWallet.js` and `testJupiter.js` are present.
+
+PAPER BUY/SELL has reportedly been tested. Wallet connectivity has been tested on Devnet. Jupiter order/quote testing returned an insufficient-funds response; no successful Mainnet swap was verified. REAL SELL is currently not implemented. These are the known historical findings; inspect the current repository to confirm the exact state.
+
+## Required architecture
+
+### 1. Telegram listener
+
+- Connect to the specified source channel using an authorized and supported Telegram integration.
+- Receive new channel messages in real time.
+- Parse the token mint address from the message, including known variations in message format.
+- Validate the address and confirm it belongs to a Solana token.
+- Ignore messages without a valid mint address.
+- Deduplicate messages using channel ID, message ID, and token mint.
+- Record received messages, parsing results, and errors.
+- Handle reconnects, delayed messages, and restarts safely.
+
+First determine whether the channel is owned or administered by me. If it is a third-party channel, explain which Telegram permissions or authorized client integration are needed. Do not bypass private-channel access controls.
+
+### 2. DEX Screener market-data integration
+
+Use the official DEX Screener API documentation:
+
+https://docs.dexscreener.com/api/reference
+
+Use the token-pairs endpoint or another appropriate official endpoint to retrieve Solana token pairs and market information.
+
+Validate:
+
+- Token mint address and chain ID
+- Available liquidity
+- Current price and price history
+- Recent buy/sell activity and volume
+- Pair creation time
+- Available pool/route information
+- Stale or missing market data
+
+Do not use a token symbol alone to identify a coin. Use the mint address.
+
+DEX Screener data is for market analysis; actual swap execution requires a compatible execution provider and available liquidity.
+
+### 3. Strategy and automated BUY
+
+When a valid Telegram alert arrives:
+
+1. Extract and validate the mint.
+2. Check whether the token has already been processed or bought.
+3. Fetch fresh market data.
+4. Apply configurable liquidity, volume, age, price, and risk filters.
+5. Check the available wallet balance and SOL reserve for transaction fees.
+6. Calculate the intended SOL purchase amount.
+7. Check slippage, price impact, and execution route.
+8. Submit a real swap only when the configured rules pass and REAL trading has been explicitly enabled.
+9. Confirm execution and reconcile the actual wallet balance.
+10. Save the transaction signature, actual input amount, actual token output, fees, and entry cost basis.
+
+A Telegram alert alone must never trigger an unconditional purchase.
+
+### 4. Automated SELL rules
+
+Implement configurable rules, with no hardcoded strategy assumptions. Examples:
+
+- Sell a configured percentage of the current token position after a specified gain.
+- Sell another configured percentage at a later profit target.
+- Stop-loss at a specified loss.
+- Trailing stop based on the highest observed price after entry.
+- Optional time-based exit.
+- Emergency stop for all new buys.
+
+Example only: if entry price is 1.00 and the token price reaches 1.25, the price has increased 25%. The bot could sell 10% of the remaining position if that is the owner's configured rule.
+
+Clarify whether percentages refer to price change, the percentage of the original position, or the percentage of the remaining position. Do not treat a price increase of 25% as a guaranteed 25% realized profit.
+
+Use actual token balances and token decimals when calculating sell amounts. Avoid duplicate or overlapping sell orders. After each confirmed partial sale, update the remaining position.
+
+### 5. Phantom wallet and execution
+
+Phantom is the intended wallet.
+
+Before implementation, explain the supported signing options for an unattended server-side bot. A browser Phantom connection that requires user approval for every transaction is not automatically equivalent to unattended server-side trading.
+
+Do not attempt to automate clicks in the Phantom browser extension.
+
+Prefer a secure, explicitly authorized signing architecture. If server-side automated signing requires a dedicated trading keypair, explain the security implications and obtain approval before implementing it. Never request the owner's seed phrase or private key in chat.
+
+If Jupiter is confirmed as the swap provider, inspect the existing `jupiterSwapService.js` and consult the official current API documentation:
+
+https://developers.jup.ag/docs/swap/index.md
+
+Use the currently supported order/sign/execute flow where appropriate. Do not assume a successful quote means a swap succeeded.
+
+### 6. Trade accounting and failure recovery
+
+- Distinguish PENDING, CONFIRMED, FAILED, and RECONCILIATION_REQUIRED states.
+- Persist transaction signatures and execution amounts.
+- Verify actual on-chain results.
+- Handle API failures, slippage, RPC timeouts, and database errors.
+- Do not blindly retry a trade whose transaction status is uncertain.
+- Reconcile blockchain balances and transaction status before retrying.
+- Update position and portfolio records only with verified execution data.
+- Calculate realized P&L using actual entry cost, sale proceeds, and fees.
+
+### 7. Safety controls
+
+- Keep PAPER mode working.
+- Never switch to Mainnet automatically.
+- Require explicit approval before enabling real-money execution.
+- Enforce maximum SOL per trade, maximum exposure, maximum daily loss, liquidity filters, and slippage limits.
+- Reject duplicate alerts and duplicate execution attempts.
+- Provide a global emergency stop.
+- Validate token addresses and prevent invalid or malicious token data from triggering execution.
+- Never log private keys, seed phrases, API keys, or Telegram session credentials.
+- Do not claim real trading works until an actual transaction is confirmed and reconciled.
+
+### 8. Client demo
+
+The final demo should show:
+
+1. A new Telegram coin alert being detected.
+2. The extracted token mint address.
+3. Market data and strategy/risk decisions.
+4. An actual confirmed BUY transaction.
+5. The resulting token balance.
+6. A triggered SELL rule.
+7. An actual confirmed SELL transaction.
+8. SOL received, fees, remaining position, and realized P&L.
+9. Telegram notifications for every important event.
+
+Do not misrepresent PAPER trades as real transactions.
+
+## Working instructions
+
+Start with a code audit. Inspect the existing services, route files, models, package scripts, environment variable names, and tests.
+
+Report what is implemented and what is missing before making code changes. Then implement the smallest safe change, test it, and continue step by step.
+
+Do not rebuild the bot from scratch. Preserve PAPER mode. Do not request secrets or ask me to paste `.env` contents.
+
+First, ask me to confirm the Telegram channel access method and target swap provider if these are not already established. Then begin the audit of the existing project.
+
+///***************************telegram setup***********////
+# Task: Integrate Telegram Channel Listener Into My Existing Solana Trading Bot
+
+Act as a senior Node.js backend developer. Explain each step in simple Hinglish and help me implement Telegram integration in my existing project without rebuilding the bot.
+
+## My goal
+
+I am a member of a particular Telegram channel that publishes new coin-arrival alerts. The channel's message format is fixed, and every alert contains a token ID/mint address.
+
+I want my existing Node.js bot to automatically read new messages from this channel, extract the complete token ID, validate it, and pass it to my existing market-data/strategy flow in a later phase.
+
+For now, implement and test Telegram integration only. Do NOT enable real BUY or SELL transactions yet.
+
+## Existing project
+
+My project is located at:
+
+`/workspaces/bot/bot`
+
+Existing services include:
+
+- `services/buyExecutionService.js`
+- `services/sellExecutionService.js`
+- `services/realTradeExecutionService.js`
+- `services/jupiterSwapService.js`
+- `services/walletService.js`
+- `services/strategyService.js`
+- `services/riskManagementService.js`
+- `services/tradeExecutionService.js`
+- `services/positionManagementService.js`
+- `services/portfolioManagementService.js`
+- `services/marketDataService.js`
+
+PAPER trading must remain intact. Do not modify trading services unnecessarily.
+
+## Telegram integration requirements
+
+I am a member, not the admin, of the target Telegram channel. My Telegram account can access the channel.
+
+Use a supported Telegram client integration, such as GramJS (`telegram` npm package), if suitable for reading messages from a channel my account is authorized to access.
+
+Do not assume a Telegram Bot API bot can read a third-party channel's messages simply because I am a member.
+
+### Step 1: Audit the project
+
+- Inspect `package.json`, the entry point, environment variable conventions, and existing service structure.
+- Identify the correct working directory.
+- Check whether a Telegram library or listener already exists.
+- Do not overwrite existing files or duplicate functionality.
+
+### Step 2: Explain Telegram API credentials
+
+Guide me to:
+
+1. Open https://my.telegram.org
+2. Sign in with my Telegram account.
+3. Open API development tools.
+4. Create an application if required.
+5. Obtain `api_id` and `api_hash`.
+
+Use environment variables such as:
+
+`TELEGRAM_API_ID`
+`TELEGRAM_API_HASH`
+`TELEGRAM_SESSION`
+`TELEGRAM_CHANNEL_ID`
+
+Use the actual variable names consistently throughout the implementation.
+
+Never ask me to paste credential values, OTPs, session strings, or `.env` contents into chat.
+
+### Step 3: Install and configure the Telegram library
+
+If GramJS is appropriate, inspect my Node.js module format first, then provide the exact installation command and compatible implementation.
+
+Handle first-time authentication interactively in a safe local terminal. Do not print or expose the resulting session string. Store the session securely outside source control.
+
+Do not commit `.env` or Telegram session credentials to GitHub.
+
+### Step 4: Create these services if missing
+
+`services/telegramSessionService.js` (optional, only if separation helps):
+- Initialize the Telegram client.
+- Handle session configuration and connection lifecycle securely.
+
+`services/telegramMessageParser.js`:
+- Parse the known fixed alert format.
+- Extract the full token mint address.
+- Validate the address using the appropriate Solana public-key validation.
+- Return structured parsing results.
+- Reject missing or invalid addresses without triggering trades.
+
+`services/telegramListenerService.js`:
+- Connect to Telegram.
+- Listen for new channel messages.
+- Filter for the configured channel.
+- Pass new message text to the parser.
+- Log message ID and parsing status without logging secrets.
+- Handle disconnects and reconnects safely.
+- Avoid processing the same channel message more than once.
+
+`testTelegramConnection.js`:
+- Test authentication and access to the intended channel.
+- Verify that a new channel message can be received.
+- Verify that the token ID can be extracted.
+- Do not execute any trades.
+
+Use `services/` for service files and place the test script according to the repository's existing conventions.
+
+### Step 5: Fixed message format
+
+The channel uses a fixed format, so build a deterministic parser based on an actual sample message that I will provide privately in my development environment.
+
+Do not invent the message structure or guess which substring is the mint address. Explain the parsing rule clearly.
+
+If you need a sample, ask for one redacted message and mark the token ID as `<TOKEN_MINT>`; never ask for credentials.
+
+### Step 6: Duplicate protection and safety
+
+- Store or track the Telegram channel ID and message ID.
+- Prevent the same alert from being processed repeatedly after reconnects or restarts.
+- Validate the mint address.
+- Do not automatically buy just because a message arrives.
+- Do not execute a swap, sign a transaction, or change the trading mode.
+- Do not alter PAPER trading behavior.
+- Handle channel access errors and malformed messages clearly.
+
+### Step 7: Testing
+
+Provide exact terminal commands and explain expected output for:
+
+1. Dependency installation.
+2. Telegram login and session setup.
+3. Channel access.
+4. Receiving a new message.
+5. Extracting the complete token mint.
+6. Rejecting malformed messages.
+7. Confirming duplicate messages are ignored.
+
+If the environment is a cloud development container, explain any interactive authentication or session-persistence limitations before proceeding.
+
+## Working style
+
+Explain one step at a time in simple Hinglish. Inspect the existing code before editing. Show complete code for only the files that need to be created or modified. Tell me the exact filename and command to run.
+
+After each step, wait for my output before moving on when a check depends on my environment.
+
+First inspect the repository and tell me which files already exist. Do not start implementing the trading logic yet.
+///////////////*****************************wallet ******************///////////////////////////////
+Bhai, tere bot ke liye seedhi strategy ye hai: dedicated bot wallet + automated transaction signing + risk controls. Phantom ko har trade approve karne ke liye kholne ki zarurat nahi hogi.
+Step-by-step strategy
+1
+
+Dedicated Solana bot wallet bana
+
+Automated trading ke liye alag wallet use kar. Isme sirf utna SOL rakho jitna testing aur trading ke liye afford kar sakti ho. Apna main Phantom wallet aur uske funds separate rakh.
+
+
+2
+
+Bot ko securely sign karna sikha
+
+Node.js backend mein @solana/web3.js ya compatible Solana SDK se dedicated wallet keypair load kar, aur signing ko ek secure service mein rakh. Private key ko code, GitHub, logs ya chat mein kabhi mat daalna.
+
+
+3
+
+Telegram → token validation → BUY
+
+Tera Telegram listener mint address nikale. Bot DEX Screener se market data check kare, liquidity aur risk rules validate kare, phir configured swap service se transaction banwaye aur bot wallet se sign karke submit kare.
+
+
+4
+
+Automatic SELL aur position tracking
+
+Bot purchased token ki actual quantity aur entry price track kare. Strategy ke profit/loss rules hit hone par sell transaction prepare, sign aur submit kare. Failed ya duplicate orders ko bhi handle kare.
+
+
+5
+
+Safety checks aur testing
+
+Pehle existing PAPER mode ko preserve kar, phir test environment mein parser, risk checks aur transaction flow test kar. Mainnet par jaane se pehle tiny test trade, slippage limit, maximum buy amount, daily loss limit aur emergency stop implement kar.
+
+
+
+Tere existing code mein pehle kya karna hai?
+Tere bot ke current status ke hisaab se pehle ye 3 kaam hain:
+1. realTradeExecutionService.js — BUY signing aur submission ka flow verify karna.
+2. sellExecutionService.js — REAL SELL implement karna; abhi ye path implemented nahi hai.
+3. jupiterSwapService.js — check karna ki swap transaction properly build hoti hai, sign hoti hai aur confirmation verify hota hai. Sirf quote milna successful trade nahi hota.
+Solana ki official guidance bhi production mein private keys ko frontend aur source control se door rakhne aur signing ko securely manage karne ki salah deti hai. 
+Solana+1
+
+
+Meri recommendation: abhi naya bot mat bana. Existing code ka audit karke missing automated-signing aur SELL parts complete kar. Devnet aur Mainnet ke wallets/keys alag rakhna, aur Mainnet testing tabhi karna jab safety checks pass ho jaayein.
+///////////////////**************************actual strightgy plan***********************//////////////////////////
+# Phase 5 — Automated Trading Strategy Discussion (Solana Bot)
+
+## Project Context
+I am building an automated Solana trading bot using Node.js. The bot listens to a specific Telegram channel for new token alerts, extracts the token mint address, checks market data using DEX Screener, and uses a swap service such as Jupiter for BUY/SELL execution.
+
+The project already has existing services for trade execution, buy/sell execution, wallet management, market data, strategy, risk management, positions, and portfolio management.
+
+Before implementing Phase 5, I want to **discuss and compare trading strategy options**. No final strategy has been decided.
+
+## Objective
+Help me explore suitable approaches for managing token positions after a BUY. Explain the available options, their advantages, disadvantages, risks, and implementation considerations in simple language.
+
+Do not assume any percentage, trading rule, or strategy is approved.
+
+## Topics to Discuss
+
+### 1. Partial Sell
+Explore different ways to sell a portion of a token position:
+- Sell a percentage of the original purchased quantity.
+- Sell a percentage of the remaining quantity.
+- Sell fixed quantities at configured price targets.
+- Sell a portion based on profit milestones.
+
+Explain how these approaches differ, with numerical examples.
+
+### 2. Stop-Loss
+Compare:
+- Fixed percentage stop-loss.
+- Trailing stop-loss.
+- Break-even stop-loss after a profit milestone.
+- Time-based exit.
+- No automatic stop-loss, with its risks clearly explained.
+
+Discuss volatile newly launched Solana tokens, price gaps, liquidity, slippage, and failed sell transactions. Explain why a stop-loss trigger cannot guarantee execution at the expected price.
+
+### 3. Profit Targets
+Explore:
+- A single take-profit target.
+- Multiple profit targets.
+- Trailing take-profit.
+- Selling the remaining position after a final target.
+- Combining partial sells with stop-loss rules.
+
+Use hypothetical examples only. Do not recommend specific percentages as universally suitable.
+
+### 4. Duplicate Protection
+Discuss how to prevent:
+- Duplicate BUYs from repeated Telegram alerts.
+- Duplicate trades after application restarts.
+- Duplicate SELLs when a transaction times out.
+- Conflicting BUY and SELL requests for the same position.
+
+Explain idempotency keys, persistent trade states, and position-level locks in simple terms. Also discuss whether duplicate protection should apply per signal, per token, or per active position.
+
+### 5. Transaction Reconciliation
+Explain how the bot should handle:
+- Submitted but unconfirmed transactions.
+- Confirmed successful transactions.
+- Failed transactions.
+- Network timeouts where the outcome is unknown.
+- Partial fills or unexpected token quantities.
+- Wallet balances that do not match the database.
+
+Discuss transaction signatures, on-chain confirmation, retry rules, and how to avoid resubmitting a trade before checking its original status.
+
+### 6. Telegram Trade Notifications
+Explore useful notifications for:
+- BUY signal detected.
+- BUY executed or failed.
+- Profit target reached.
+- Stop-loss triggered.
+- Partial SELL completed.
+- Transaction pending or failed.
+- Position fully closed.
+- Reconciliation or risk-control issue.
+
+Suggest notification formats and discuss which events should be immediate versus optional, without flooding Telegram with repeated messages.
+
+## Reference-Based Discussion
+Use reliable and current documentation where useful, including:
+- Solana transaction and confirmation documentation.
+- Jupiter Swap API documentation.
+- DEX Screener API documentation.
+- Telegram API or Telegram client documentation.
+
+Treat these as technical references, not endorsements of any trading strategy. Clearly distinguish verified platform capabilities from your own design suggestions.
+
+## Discussion Rules
+1. Do not modify files or implement code yet.
+2. Do not finalize any trading percentages or strategy parameters.
+3. Do not assume the bot should trade every token it detects.
+4. Preserve the existing PAPER trading mode and current project architecture.
+5. Identify which features are already implemented and which are missing only after inspecting the existing code.
+6. Do not claim real-money trading works unless the relevant execution and confirmation flows have been verified.
+7. Explain technical concepts in simple Hinglish, with practical examples.
+8. Do not request private keys, seed phrases, Telegram session strings, API keys, or `.env` secrets.
+9. Discuss the strategy as a configurable system rather than hardcoding rules.
+
+## Expected Output
+First, give me a comparison table of the available strategy options, including:
+- How each option works.
+- Advantages.
+- Disadvantages and risks.
+- Important implementation requirements.
+
+Then explain how different options can be combined, including potential conflicts between profit targets, stop-losses, and partial sells.
+
+Finally, ask me one focused question at a time so we can discuss the choices and gradually finalize a strategy. Do not jump directly to implementation or produce a large code change.
  
